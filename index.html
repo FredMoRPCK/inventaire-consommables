@@ -27,6 +27,7 @@
 
 <header>
   <h1 id="titre">Scanner</h1>
+  <select id="selMagasin" aria-label="Magasin"></select>
   <span id="alerteBadge" class="badge hidden"></span>
 </header>
 
@@ -63,12 +64,18 @@
       <select id="filtreCat"><option value="">Toutes catégories</option></select>
       <label class="chk"><input type="checkbox" id="filtreBas"> Stock bas</label>
     </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="filtreTous"> Tous les magasins</label>
+    </div>
     <div id="liste"></div>
     <button id="btnNouveau" class="flottant">＋</button>
   </section>
 
   <!-- HISTORIQUE -->
   <section id="vue-histo" class="vue">
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="histoTous"> Tous les magasins</label>
+    </div>
     <div id="histo"></div>
   </section>
 
@@ -86,9 +93,17 @@
       <button id="btnExpHisto">Historique (CSV)</button>
       <button id="btnExpJson">Sauvegarde complète (JSON)</button>
     </div>
+    <div class="carte admin" id="cardMag">
+      <h3>Magasins</h3>
+      <div id="listeMag"></div>
+      <div class="row">
+        <input id="nouveauMag" placeholder="Nom du nouveau magasin">
+        <button id="btnAjoutMag" class="primaire" style="flex:0 0 auto">Ajouter</button>
+      </div>
+    </div>
     <div class="carte admin" id="cardImport">
       <h3>Importer</h3>
-      <p class="aide">CSV avec colonnes : code;nom;categorie;emplacement;quantite;minimum;unite</p>
+      <p class="aide">CSV avec colonnes : magasin;code;nom;categorie;emplacement;quantite;minimum;unite. Sans colonne « magasin », les articles vont dans le magasin choisi en haut.</p>
       <input type="file" id="fichierImport" accept=".csv,.json,text/csv,application/json">
     </div>
     <div class="carte admin" id="cardDanger">

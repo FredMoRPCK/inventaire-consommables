@@ -5,9 +5,16 @@ service cloud.firestore {
     // Administrateurs : doit correspondre à ADMINS dans app.js
     function admin() { return connecte() && request.auth.token.email.lower() in ['frederic.morin@ropack.com']; }
 
+    // Magasins : lecture pour tous les connectés, gestion par l'administrateur
+    match /magasins/{id} {
+      allow read: if connecte();
+      allow write: if admin();
+    }
+    // Un article = un code dans un magasin
     match /articles/{id} {
       allow read: if connecte();
       allow create, update: if connecte()
+        && request.resource.data.magasin is string
         && request.resource.data.code is string
         && request.resource.data.nom is string
         && request.resource.data.qte is number;

@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail }
   from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc, setDoc,
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, doc,
   onSnapshot, query, orderBy, limit, writeBatch, increment, getDocs }
   from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
@@ -15,21 +15,30 @@ const auth = getAuth(fbApp);
 const fs = initializeFirestore(fbApp, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
 const colArt = collection(fs, 'articles');
 const colMv = collection(fs, 'mouvements');
-const idDe = code => encodeURIComponent(code);
+const colMag = collection(fs, 'magasins');
 
 // Administrateurs : doit correspondre à la liste dans firestore.rules (les règles font foi, l'interface ne fait que masquer)
 const ADMINS = ['frederic.morin@ropack.com'];
 const isAdmin = () => !!user && ADMINS.includes((user.email || '').toLowerCase());
 
-let articles = {};   // code -> article
+// Un article = un code dans un magasin. Même code dans deux magasins = deux documents, deux stocks.
+const idArt = (mid, code) => mid + '__' + encodeURIComponent(code);
+
+let magasins = {};   // id -> {id, nom}
+let articles = {};   // idArt -> article
 let histo = [];      // mouvements récents
 let user = null;
 let unsubs = [];
+let mCur = '';       // magasin actif
+try { mCur = localStorage.getItem('inv-magasin') || ''; } catch (e) {}
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const bas = a => a.min > 0 && a.qte <= a.min;
 const fmt = n => Math.round(n * 1000) / 1000;
+const nomMag = id => (magasins[id] && magasins[id].nom) || '(magasin supprimé)';
 const erreur = e => { console.error(e); toast('Erreur : ' + (e.code || e.message || e)); };
+const arts = () => Object.values(articles).filter(a => magasins[a.magasin]);
+const artsMag = () => arts().filter(a => a.magasin === mCur);
 
 function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
@@ -44,7 +53,7 @@ function beep() {
   if (navigator.vibrate) navigator.vibrate(50);
 }
 const mvDoc = (type, a, delta, apres, note) =>
-  ({ t: Date.now(), type, code: a.code, nom: a.nom, delta, apres, note: note || '', user: user ? user.email : '' });
+  ({ t: Date.now(), type, magasin: a.magasin, code: a.code, nom: a.nom, delta, apres, note: note || '', user: user ? user.email : '' });
 
 // ---------- Connexion ----------
 onAuthStateChanged(auth, u => {
@@ -52,16 +61,22 @@ onAuthStateChanged(auth, u => {
   unsubs.forEach(f => f()); unsubs = [];
   $('#login').classList.toggle('hidden', !!u);
   document.body.classList.toggle('est-admin', isAdmin());
-  if (!u) { articles = {}; histo = []; stopScan(); render(); return; }
+  if (!u) { magasins = {}; articles = {}; histo = []; stopScan(); render(); return; }
   $('#userInfo').textContent = 'Connecté : ' + u.email + (isAdmin() ? ' (administrateur)' : '');
+  unsubs.push(onSnapshot(colMag, snap => {
+    magasins = {};
+    snap.forEach(d => { magasins[d.id] = { id: d.id, ...d.data() }; });
+    if (!magasins[mCur]) mCur = Object.keys(magasins).sort((a, b) => nomMag(a).localeCompare(nomMag(b), 'fr'))[0] || '';
+    render();
+  }, erreur));
   unsubs.push(onSnapshot(colArt, { includeMetadataChanges: true }, snap => {
     articles = {};
-    snap.forEach(d => { const a = d.data(); articles[a.code] = a; });
+    snap.forEach(d => { articles[d.id] = d.data(); });
     $('#syncInfo').textContent = snap.metadata.fromCache
       ? '⚠ Hors-ligne ou en attente de synchronisation' : '✓ Synchronisé';
     render();
   }, erreur));
-  unsubs.push(onSnapshot(query(colMv, orderBy('t', 'desc'), limit(300)), snap => {
+  unsubs.push(onSnapshot(query(colMv, orderBy('t', 'desc'), limit(600)), snap => {
     histo = snap.docs.map(d => d.data()); render();
   }, erreur));
 });
@@ -80,6 +95,42 @@ $('#l_reset').onclick = async () => {
   catch (err) { $('#l_err').textContent = 'Erreur : ' + err.code; }
 };
 $('#btnLogout').onclick = () => signOut(auth);
+
+// ---------- Magasins ----------
+$('#selMagasin').onchange = e => {
+  mCur = e.target.value;
+  try { localStorage.setItem('inv-magasin', mCur); } catch (err) {}
+  $('#dernier').classList.add('hidden');
+  render();
+};
+$('#btnAjoutMag').onclick = () => {
+  const nom = $('#nouveauMag').value.trim();
+  if (!isAdmin() || !nom) return;
+  if (Object.values(magasins).some(m => m.nom.toLowerCase() === nom.toLowerCase())) return toast('Ce magasin existe déjà');
+  const ref = doc(colMag);
+  const batch = writeBatch(fs); batch.set(ref, { nom }); batch.commit().catch(erreur);
+  $('#nouveauMag').value = '';
+  if (!mCur) mCur = ref.id;
+  toast('Magasin ajouté');
+};
+function renderListeMag() {
+  const ids = Object.keys(magasins).sort((a, b) => nomMag(a).localeCompare(nomMag(b), 'fr'));
+  $('#listeMag').innerHTML = ids.length ? ids.map(id => `
+    <div class="mag"><span>${esc(magasins[id].nom)}</span>
+    <button data-ren="${esc(id)}">Renommer</button><button data-del="${esc(id)}" class="danger">Supprimer</button></div>`).join('')
+    : '<p class="aide">Aucun magasin. Ajoutez-en un pour commencer.</p>';
+  $$('#listeMag [data-ren]').forEach(b => b.onclick = () => {
+    const nom = (prompt('Nouveau nom du magasin :', magasins[b.dataset.ren].nom) || '').trim();
+    if (!nom || !isAdmin()) return;
+    const batch = writeBatch(fs); batch.update(doc(colMag, b.dataset.ren), { nom }); batch.commit().catch(erreur);
+  });
+  $$('#listeMag [data-del]').forEach(b => b.onclick = () => {
+    if (!isAdmin()) return;
+    if (arts().some(a => a.magasin === b.dataset.del)) return alert('Ce magasin contient encore des articles. Videz-le ou supprimez ses articles d\'abord.');
+    if (!confirm(`Supprimer le magasin « ${magasins[b.dataset.del].nom} » ?`)) return;
+    const batch = writeBatch(fs); batch.delete(doc(colMag, b.dataset.del)); batch.commit().catch(erreur);
+  });
+}
 
 // ---------- Navigation ----------
 $$('.tab').forEach(b => b.onclick = () => {
@@ -109,6 +160,7 @@ let scanner = null, scanning = false, lastCode = '', lastTime = 0, torchOn = fal
 
 async function startScan() {
   if (scanning) return;
+  if (!mCur) return toast('Aucun magasin : demandez à l\'administrateur d\'en créer un');
   if (!window.Html5Qrcode) return toast('Bibliothèque de scan non chargée (connexion requise la 1re fois)');
   if (!window.isSecureContext) return toast('La caméra exige HTTPS');
   scanner = scanner || new Html5Qrcode('lecteur', {
@@ -168,12 +220,13 @@ $('#formCode').onsubmit = e => {
 };
 
 function traiter(code) {
+  if (!mCur) return toast('Aucun magasin sélectionné');
   if (scanPourFiche) {
     scanPourFiche = false; stopScan();
-    return ouvrirArticle(articles[code] || null, code);
+    return ouvrirArticle(articles[idArt(editMag, code)] || null, code, editMag);
   }
-  const a = articles[code];
-  if (!a) { pause(); toast('Code inconnu : création'); return ouvrirArticle(null, code); }
+  const a = articles[idArt(mCur, code)];
+  if (!a) { pause(); toast('Code inconnu dans ce magasin : création'); return ouvrirArticle(null, code, mCur); }
   ouvrirQte(a);
 }
 
@@ -183,7 +236,7 @@ function ouvrirQte(a) {
   qArt = a;
   const lib = { sortie: 'Sortie', entree: 'Entrée', compte: 'Comptage' }[mode];
   $('#q_titre').textContent = `${lib} — ${a.nom}`;
-  $('#q_info').textContent = `Stock actuel : ${fmt(a.qte)} ${a.unite}` + (a.empl ? ` · ${a.empl}` : '');
+  $('#q_info').textContent = `${nomMag(a.magasin)} · Stock actuel : ${fmt(a.qte)} ${a.unite}` + (a.empl ? ` · ${a.empl}` : '');
   $('#q_val').value = mode === 'compte' ? fmt(a.qte) : 1;
   $('#q_note').value = '';
   pause();
@@ -195,7 +248,7 @@ $('#q_plus').onclick = () => $('#q_val').value = fmt(+$('#q_val').value + 1);
 $('#q_annuler').onclick = () => $('#dlgQte').close();
 $('#dlgQte').addEventListener('close', reprendre);
 $('#formQte').onsubmit = () => {
-  const v = +$('#q_val').value, a = articles[qArt.code] || qArt, note = $('#q_note').value.trim();
+  const v = +$('#q_val').value, a = articles[idArt(qArt.magasin, qArt.code)] || qArt, note = $('#q_note').value.trim();
   if (isNaN(v) || v < 0) return;
   let delta, type;
   if (mode === 'sortie') { delta = -v; type = 'sortie'; }
@@ -205,22 +258,24 @@ $('#formQte').onsubmit = () => {
   const apres = fmt(a.qte + delta);
   const batch = writeBatch(fs);
   // Entrée/sortie : incrément côté serveur, pour que deux utilisateurs simultanés ne s'écrasent pas.
-  batch.update(doc(fs, 'articles', idDe(a.code)), { qte: mode === 'compte' ? v : increment(delta) });
+  batch.update(doc(fs, 'articles', idArt(a.magasin, a.code)), { qte: mode === 'compte' ? v : increment(delta) });
   batch.set(doc(colMv), mvDoc(type, a, fmt(delta), apres, note));
   batch.commit().catch(erreur);
   const d = $('#dernier');
   d.classList.remove('hidden');
   d.style.borderLeftColor = a.min > 0 && apres <= a.min ? 'var(--bad)' : 'var(--ok)';
-  d.innerHTML = `<b>${esc(a.nom)}</b><br>${type} ${delta > 0 ? '+' : ''}${fmt(delta)} → <b>${apres} ${esc(a.unite)}</b>` +
+  d.innerHTML = `<b>${esc(a.nom)}</b> <span class="tag">${esc(nomMag(a.magasin))}</span><br>${type} ${delta > 0 ? '+' : ''}${fmt(delta)} → <b>${apres} ${esc(a.unite)}</b>` +
     (a.min > 0 && apres <= a.min ? `<br><span style="color:var(--bad)">⚠ Stock bas (min ${fmt(a.min)})</span>` : '');
   toast('Enregistré');
 };
 
 // ---------- Fiche article ----------
-let editCode = null;
-function ouvrirArticle(a, codePre) {
-  editCode = a ? a.code : null;
-  $('#dlgTitre').textContent = a ? 'Modifier article' : 'Nouvel article';
+let editMag = '', editId = null;
+function ouvrirArticle(a, codePre, mag) {
+  editMag = a ? a.magasin : (mag || mCur);
+  editId = a ? idArt(a.magasin, a.code) : null;
+  if (!editMag) return toast('Aucun magasin : demandez à l\'administrateur d\'en créer un');
+  $('#dlgTitre').textContent = (a ? 'Modifier article' : 'Nouvel article') + ' — ' + nomMag(editMag);
   $('#a_code').value = a ? a.code : (codePre || '');
   $('#a_nom').value = a ? a.nom : '';
   $('#a_cat').value = a ? a.cat : '';
@@ -236,9 +291,9 @@ $('#a_annuler').onclick = () => $('#dlgArticle').close();
 $('#dlgArticle').addEventListener('close', reprendre);
 $('#a_suppr').onclick = () => {
   if (!isAdmin()) return;
-  if (!confirm('Supprimer cet article pour tous les utilisateurs ?')) return;
+  if (!confirm(`Supprimer cet article du magasin « ${nomMag(editMag)} » pour tous les utilisateurs ?`)) return;
   const batch = writeBatch(fs);
-  batch.delete(doc(fs, 'articles', idDe(editCode)));
+  batch.delete(doc(fs, 'articles', editId));
   batch.commit().catch(erreur);
   $('#dlgArticle').close();
 };
@@ -253,14 +308,15 @@ $('#a_scan').onclick = () => {
 $('#formArticle').onsubmit = () => {
   const code = $('#a_code').value.trim(), nom = $('#a_nom').value.trim();
   if (!code || !nom) return;
-  const ancien = articles[code];
+  const nouvelId = idArt(editMag, code);
+  const ancien = articles[nouvelId];
   const a = {
-    code, nom, cat: $('#a_cat').value.trim(), empl: $('#a_empl').value.trim(),
+    magasin: editMag, code, nom, cat: $('#a_cat').value.trim(), empl: $('#a_empl').value.trim(),
     qte: +$('#a_qte').value || 0, min: +$('#a_min').value || 0, unite: $('#a_unite').value.trim() || 'unité'
   };
   const batch = writeBatch(fs);
-  if (editCode && editCode !== code) batch.delete(doc(fs, 'articles', idDe(editCode)));
-  batch.set(doc(fs, 'articles', idDe(code)), a);
+  if (editId && editId !== nouvelId) batch.delete(doc(fs, 'articles', editId));
+  batch.set(doc(fs, 'articles', nouvelId), a);
   if (!ancien && a.qte) batch.set(doc(colMv), mvDoc('création', a, a.qte, a.qte, ''));
   else if (ancien && ancien.qte !== a.qte) batch.set(doc(colMv), mvDoc('ajustement', a, fmt(a.qte - ancien.qte), a.qte, 'modif. fiche'));
   batch.commit().catch(erreur);
@@ -269,37 +325,47 @@ $('#formArticle').onsubmit = () => {
 
 // ---------- Rendu ----------
 function render() {
-  const arts = Object.values(articles);
-  const nbBas = arts.filter(bas).length;
-  const bd = $('#alerteBadge');
-  bd.classList.toggle('hidden', !nbBas); bd.textContent = `${nbBas} stock bas`;
+  // Sélecteur de magasin
+  const ids = Object.keys(magasins).sort((a, b) => nomMag(a).localeCompare(nomMag(b), 'fr'));
+  const sel = $('#selMagasin');
+  sel.innerHTML = ids.length ? ids.map(id => `<option value="${esc(id)}">${esc(magasins[id].nom)}</option>`).join('')
+    : '<option value="">Aucun magasin</option>';
+  sel.value = mCur;
+  renderListeMag();
 
-  const cats = [...new Set(arts.map(a => a.cat).filter(Boolean))].sort();
+  const tous = $('#filtreTous').checked;
+  const base = tous ? arts() : artsMag();
+  const nbBas = artsMag().filter(bas).length;
+  const bd = $('#alerteBadge');
+  bd.classList.toggle('hidden', !nbBas); bd.textContent = `${nbBas} bas`;
+
+  const cats = [...new Set(base.map(a => a.cat).filter(Boolean))].sort();
   const fc = $('#filtreCat'), cur = fc.value;
   fc.innerHTML = '<option value="">Toutes catégories</option>' + cats.map(c => `<option>${esc(c)}</option>`).join('');
   fc.value = cats.includes(cur) ? cur : '';
   $('#listeCat').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
 
   const q = $('#recherche').value.toLowerCase().trim(), cat = fc.value, soloBas = $('#filtreBas').checked;
-  const res = arts.filter(a => (!cat || a.cat === cat) && (!soloBas || bas(a)) &&
+  const res = base.filter(a => (!cat || a.cat === cat) && (!soloBas || bas(a)) &&
     (!q || [a.nom, a.code, a.empl, a.cat].join(' ').toLowerCase().includes(q)))
-    .sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
+    .sort((x, y) => x.nom.localeCompare(y.nom, 'fr') || nomMag(x.magasin).localeCompare(nomMag(y.magasin), 'fr'));
   $('#liste').innerHTML = res.length ? res.map(a => `
-    <div class="art ${bas(a) ? 'bas' : ''}" data-code="${esc(a.code)}">
-      <div class="i"><div class="n">${esc(a.nom)}</div>
+    <div class="art ${bas(a) ? 'bas' : ''}" data-id="${esc(idArt(a.magasin, a.code))}">
+      <div class="i"><div class="n">${tous ? `<span class="tag">${esc(nomMag(a.magasin))}</span>` : ''}${esc(a.nom)}</div>
       <div class="s">${esc(a.code)}${a.empl ? ' · ' + esc(a.empl) : ''}${a.cat ? ' · ' + esc(a.cat) : ''}</div></div>
       <div class="qte">${fmt(a.qte)}<small>${esc(a.unite)}${a.min ? ' · min ' + fmt(a.min) : ''}</small></div>
     </div>`).join('') :
-    '<p class="aide">Aucun article. Scannez un code ou appuyez sur ＋.</p>';
-  $$('#liste .art').forEach(el => el.onclick = () => ouvrirArticle(articles[el.dataset.code]));
+    `<p class="aide">${mCur || tous ? 'Aucun article. Scannez un code ou appuyez sur ＋.' : 'Aucun magasin. L\'administrateur doit en créer un (onglet Données).'}</p>`;
+  $$('#liste .art').forEach(el => el.onclick = () => ouvrirArticle(articles[el.dataset.id]));
 
-  $('#histo').innerHTML = histo.map(h => {
+  const htous = $('#histoTous').checked;
+  $('#histo').innerHTML = histo.filter(h => htous || h.magasin === mCur).slice(0, 300).map(h => {
     const c = h.type === 'sortie' ? 's' : h.type === 'comptage' || h.type === 'ajustement' ? 'c' : 'e';
     return `<div class="mv"><div><b class="${c}">${esc(h.type)} ${h.delta > 0 ? '+' : ''}${fmt(h.delta)}</b> ${esc(h.nom)}
-      <div class="aide">${new Date(h.t).toLocaleString('fr-CA')} · reste ${fmt(h.apres)}${h.user ? ' · ' + esc(h.user) : ''}${h.note ? ' · ' + esc(h.note) : ''}</div></div></div>`;
+      <div class="aide">${htous ? `<span class="tag">${esc(nomMag(h.magasin))}</span>` : ''}${new Date(h.t).toLocaleString('fr-CA')} · reste ${fmt(h.apres)}${h.user ? ' · ' + esc(h.user) : ''}${h.note ? ' · ' + esc(h.note) : ''}</div></div></div>`;
   }).join('') || '<p class="aide">Aucun mouvement.</p>';
 }
-['#recherche', '#filtreCat', '#filtreBas'].forEach(s => $(s).addEventListener('input', render));
+['#recherche', '#filtreCat', '#filtreBas', '#filtreTous', '#histoTous'].forEach(s => $(s).addEventListener('input', render));
 
 // ---------- Import / export ----------
 function telecharger(nom, contenu, type) {
@@ -311,12 +377,13 @@ const csvCell = v => /[;"\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '"
 const csv = rows => '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
 const jour = () => new Date().toISOString().slice(0, 10);
 $('#btnExpStock').onclick = () => telecharger(`stock-${jour()}.csv`,
-  csv([['code', 'nom', 'categorie', 'emplacement', 'quantite', 'minimum', 'unite'],
-    ...Object.values(articles).map(a => [a.code, a.nom, a.cat, a.empl, a.qte, a.min, a.unite])]), 'text/csv');
+  csv([['magasin', 'code', 'nom', 'categorie', 'emplacement', 'quantite', 'minimum', 'unite'],
+    ...arts().sort((x, y) => nomMag(x.magasin).localeCompare(nomMag(y.magasin), 'fr') || x.nom.localeCompare(y.nom, 'fr'))
+      .map(a => [nomMag(a.magasin), a.code, a.nom, a.cat, a.empl, a.qte, a.min, a.unite])]), 'text/csv');
 $('#btnExpHisto').onclick = () => telecharger(`historique-${jour()}.csv`,
-  csv([['date', 'type', 'code', 'nom', 'variation', 'apres', 'utilisateur', 'note'],
-    ...histo.map(h => [new Date(h.t).toISOString(), h.type, h.code, h.nom, h.delta, h.apres, h.user || '', h.note])]), 'text/csv');
-$('#btnExpJson').onclick = () => telecharger(`sauvegarde-${jour()}.json`, JSON.stringify({ articles, histo }), 'application/json');
+  csv([['date', 'magasin', 'type', 'code', 'nom', 'variation', 'apres', 'utilisateur', 'note'],
+    ...histo.map(h => [new Date(h.t).toISOString(), nomMag(h.magasin), h.type, h.code, h.nom, h.delta, h.apres, h.user || '', h.note])]), 'text/csv');
+$('#btnExpJson').onclick = () => telecharger(`sauvegarde-${jour()}.json`, JSON.stringify({ magasins, articles, histo }), 'application/json');
 
 // Écriture par lots de 400 (limite Firestore : 500)
 async function ecrireLots(ops) {
@@ -328,10 +395,10 @@ async function ecrireLots(ops) {
 }
 $('#btnReset').onclick = async () => {
   if (!isAdmin()) return;
-  if (prompt('Cela efface TOUS les articles et l\'historique pour tous les utilisateurs.\nTapez EFFACER pour confirmer.') !== 'EFFACER') return;
+  if (prompt('Cela efface TOUS les magasins, articles et l\'historique pour tous les utilisateurs.\nTapez EFFACER pour confirmer.') !== 'EFFACER') return;
   try {
-    const [a, m] = await Promise.all([getDocs(colArt), getDocs(colMv)]);
-    await ecrireLots([...a.docs, ...m.docs].map(d => b => b.delete(d.ref)));
+    const [a, m, g] = await Promise.all([getDocs(colArt), getDocs(colMv), getDocs(colMag)]);
+    await ecrireLots([...a.docs, ...m.docs, ...g.docs].map(d => b => b.delete(d.ref)));
     toast('Données effacées');
   } catch (e) { erreur(e); }
 };
@@ -355,27 +422,43 @@ $('#fichierImport').onchange = async e => {
   const f = e.target.files[0]; if (!f || !isAdmin()) return;
   const txt = await f.text();
   try {
+    const ops = [];
+    const idParNom = {};
+    Object.values(magasins).forEach(m => { idParNom[m.nom.toLowerCase()] = m.id; });
+    // Trouve le magasin par son nom ; le crée s'il n'existe pas
+    const magId = nom => {
+      const k = nom.trim().toLowerCase();
+      if (!idParNom[k]) {
+        const ref = doc(colMag); idParNom[k] = ref.id;
+        ops.push(b => b.set(ref, { nom: nom.trim() }));
+      }
+      return idParNom[k];
+    };
     let liste = [];
     if (f.name.endsWith('.json')) {
       const d = JSON.parse(txt);
       if (!d.articles) throw 0;
-      liste = Object.values(d.articles);
-      if (!confirm(`Restaurer ${liste.length} articles (écrase ceux ayant le même code) ?`)) return;
+      Object.values(d.magasins || {}).forEach(m => ops.push(b => b.set(doc(colMag, m.id), { nom: m.nom })));
+      liste = Object.values(d.articles).filter(a => a.magasin);
+      if (!confirm(`Restaurer ${liste.length} articles (écrase ceux ayant le même code dans le même magasin) ?`)) return;
     } else {
       const rows = parseCsv(txt), h = rows.shift().map(x => x.trim().toLowerCase());
       const idx = n => h.findIndex(x => x.startsWith(n));
-      const [ic, inom, icat, iem, iq, imin, iu] = ['code', 'nom', 'cat', 'empl', 'quant', 'min', 'unit'].map(idx);
+      const [im, ic, inom, icat, iem, iq, imin, iu] = ['mag', 'code', 'nom', 'cat', 'empl', 'quant', 'min', 'unit'].map(idx);
       if (ic < 0 || inom < 0) throw 0;
+      if (im < 0 && !mCur) throw 0;
       const num = (r, i) => i < 0 ? 0 : parseFloat((r[i] || '0').replace(',', '.')) || 0;
       rows.forEach(r => {
         const code = (r[ic] || '').trim(); if (!code) return;
-        liste.push({ code, nom: r[inom] || code, cat: icat < 0 ? '' : r[icat] || '', empl: iem < 0 ? '' : r[iem] || '',
-          qte: num(r, iq), min: num(r, imin), unite: iu < 0 ? 'unité' : r[iu] || 'unité' });
+        const nomM = im >= 0 ? (r[im] || '').trim() : '';
+        liste.push({ magasin: nomM ? magId(nomM) : mCur, code, nom: r[inom] || code, cat: icat < 0 ? '' : r[icat] || '',
+          empl: iem < 0 ? '' : r[iem] || '', qte: num(r, iq), min: num(r, imin), unite: iu < 0 ? 'unité' : r[iu] || 'unité' });
       });
     }
-    await ecrireLots(liste.map(a => b => b.set(doc(fs, 'articles', idDe(a.code)), a)));
+    liste.forEach(a => ops.push(b => b.set(doc(fs, 'articles', idArt(a.magasin, a.code)), a)));
+    await ecrireLots(ops);
     toast(liste.length + ' articles importés');
-  } catch (err) { alert('Fichier invalide ou écriture refusée.'); }
+  } catch (err) { console.error(err); alert('Fichier invalide ou écriture refusée.'); }
   e.target.value = '';
 };
 
