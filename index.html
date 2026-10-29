@@ -102,6 +102,12 @@
         <button id="btnAjoutMag" class="primaire" style="flex:0 0 auto">Ajouter</button>
       </div>
     </div>
+    <div class="carte admin hidden" id="cardLegacy">
+      <h3>Anciennes données sans magasin</h3>
+      <p class="aide" id="legacyInfo"></p>
+      <label>Rattacher au magasin <select id="legacyMag"></select></label>
+      <button id="btnRattacher" class="primaire">Rattacher</button>
+    </div>
     <div class="carte admin" id="cardImport">
       <h3>Importer</h3>
       <p class="aide">CSV avec colonnes : magasin;code;nom;categorie;emplacement;quantite;minimum;unite. Sans colonne « magasin », les articles vont dans le magasin choisi en haut.</p>

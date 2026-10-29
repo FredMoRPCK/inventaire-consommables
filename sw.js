@@ -1,4 +1,4 @@
-const CACHE = 'inv-v4';
+const CACHE = 'inv-v5';
 const FICHIERS = ['./', 'index.html', 'style.css', 'app.js', 'firebase-config.js', 'manifest.json', 'icon.svg',
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'];
 

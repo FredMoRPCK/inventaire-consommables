@@ -66,7 +66,10 @@ onAuthStateChanged(auth, u => {
   unsubs.push(onSnapshot(colMag, snap => {
     magasins = {};
     snap.forEach(d => { magasins[d.id] = { id: d.id, ...d.data() }; });
-    if (!magasins[mCur]) mCur = Object.keys(magasins).sort((a, b) => nomMag(a).localeCompare(nomMag(b), 'fr'))[0] || '';
+    // Reprend le dernier magasin choisi sur cet appareil ; sinon le premier de la liste
+    let saved = ''; try { saved = localStorage.getItem('inv-magasin') || ''; } catch (e) {}
+    if (magasins[saved]) mCur = saved;
+    else if (!magasins[mCur]) mCur = Object.keys(magasins).sort((a, b) => nomMag(a).localeCompare(nomMag(b), 'fr'))[0] || '';
     render();
   }, erreur));
   unsubs.push(onSnapshot(colArt, { includeMetadataChanges: true }, snap => {
@@ -77,7 +80,7 @@ onAuthStateChanged(auth, u => {
     render();
   }, erreur));
   unsubs.push(onSnapshot(query(colMv, orderBy('t', 'desc'), limit(600)), snap => {
-    histo = snap.docs.map(d => d.data()); render();
+    histo = snap.docs.map(d => ({ ...d.data(), _id: d.id })); render();
   }, erreur));
 });
 $('#formLogin').onsubmit = async e => {
@@ -131,6 +134,39 @@ function renderListeMag() {
     const batch = writeBatch(fs); batch.delete(doc(colMag, b.dataset.del)); batch.commit().catch(erreur);
   });
 }
+
+// Données créées avant l'arrivée des magasins : sans champ « magasin », donc invisibles tant qu'elles ne sont pas rattachées.
+const legacyArts = () => Object.entries(articles).filter(([, a]) => !a.magasin);
+const legacyMvs = () => histo.filter(h => !h.magasin);
+function renderLegacy(ids) {
+  const na = legacyArts().length, nm = legacyMvs().length;
+  $('#cardLegacy').classList.toggle('hidden', !(na || nm) || !ids.length);
+  if (!(na || nm)) return;
+  $('#legacyInfo').textContent = `${na} article(s) et ${nm} mouvement(s) datent d'avant les magasins et sont masqués. Choisissez le magasin auquel les rattacher.`;
+  const s = $('#legacyMag'), cur = s.value;
+  s.innerHTML = ids.map(id => `<option value="${esc(id)}">${esc(magasins[id].nom)}</option>`).join('');
+  if (ids.includes(cur)) s.value = cur;
+}
+$('#btnRattacher').onclick = async () => {
+  const mag = $('#legacyMag').value;
+  if (!isAdmin() || !mag) return;
+  const la = legacyArts(), lm = legacyMvs();
+  if (!confirm(`Rattacher ${la.length} article(s) et ${lm.length} mouvement(s) au magasin « ${nomMag(mag)} » ?`)) return;
+  const ops = [];
+  la.forEach(([oldId, a]) => {
+    const nid = idArt(mag, a.code), exist = articles[nid];
+    // Si le même code existe déjà dans ce magasin, on additionne les quantités
+    if (exist) ops.push(b => b.update(doc(fs, 'articles', nid), { qte: increment(a.qte || 0) }));
+    else ops.push(b => b.set(doc(fs, 'articles', nid), { ...a, magasin: mag }));
+    ops.push(b => b.delete(doc(fs, 'articles', oldId)));
+  });
+  lm.forEach(h => {
+    const { _id, ...reste } = h;
+    ops.push(b => b.set(doc(colMv), { ...reste, magasin: mag }));
+    ops.push(b => b.delete(doc(colMv, _id)));
+  });
+  try { await ecrireLots(ops); toast('Données rattachées'); } catch (e) { erreur(e); }
+};
 
 // ---------- Navigation ----------
 $$('.tab').forEach(b => b.onclick = () => {
@@ -363,6 +399,7 @@ function render() {
     : '<option value="">Aucun magasin</option>';
   sel.value = mCur;
   renderListeMag();
+  renderLegacy(ids);
 
   const tous = $('#filtreTous').checked;
   const base = tous ? arts() : artsMag();
