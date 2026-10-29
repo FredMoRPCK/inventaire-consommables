@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Seuls les utilisateurs connectés peuvent lire et écrire le stock
+    match /articles/{id} {
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.code is string
+        && request.resource.data.nom is string
+        && request.resource.data.qte is number;
+      allow delete: if request.auth != null;
+    }
+    // L'historique est ajouté seulement (pas de modification ni de suppression)
+    match /mouvements/{id} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if false;
+      allow delete: if request.auth != null;
+    }
+  }
+}

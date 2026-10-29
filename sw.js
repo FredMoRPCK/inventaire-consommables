@@ -1,5 +1,5 @@
-const CACHE = 'inv-v1';
-const FICHIERS = ['./', 'index.html', 'style.css', 'app.js', 'manifest.json', 'icon.svg',
+const CACHE = 'inv-v2';
+const FICHIERS = ['./', 'index.html', 'style.css', 'app.js', 'firebase-config.js', 'manifest.json', 'icon.svg',
   'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'];
 
 self.addEventListener('install', e => {
@@ -10,6 +10,9 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+  const h = new URL(e.request.url).hostname;
+  // Seulement le site lui-même et les bibliothèques ; jamais les appels Firebase (données/connexion)
+  if (h !== self.location.hostname && h !== 'www.gstatic.com' && h !== 'unpkg.com') return;
   e.respondWith(
     fetch(e.request).then(r => {
       const copie = r.clone();

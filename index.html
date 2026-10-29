@@ -14,8 +14,19 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<div id="login" class="hidden">
+  <form id="formLogin" class="carte">
+    <h2>Inventaire consommables</h2>
+    <label>Courriel <input id="l_email" type="email" required autocomplete="username"></label>
+    <label>Mot de passe <input id="l_pass" type="password" required autocomplete="current-password"></label>
+    <p id="l_err" class="aide err"></p>
+    <button type="submit" class="primaire" style="width:100%">Se connecter</button>
+    <button type="button" id="l_reset" style="width:100%;margin-top:8px">Mot de passe oublié</button>
+  </form>
+</div>
+
 <header>
-  <h1 id="titre">Inventaire</h1>
+  <h1 id="titre">Scanner</h1>
   <span id="alerteBadge" class="badge hidden"></span>
 </header>
 
@@ -64,6 +75,12 @@
   <!-- DONNEES -->
   <section id="vue-data" class="vue">
     <div class="carte">
+      <h3>Compte</h3>
+      <p class="aide" id="userInfo"></p>
+      <p class="aide" id="syncInfo"></p>
+      <button id="btnLogout">Se déconnecter</button>
+    </div>
+    <div class="carte">
       <h3>Exporter</h3>
       <button id="btnExpStock">Stock (CSV)</button>
       <button id="btnExpHisto">Historique (CSV)</button>
@@ -76,9 +93,10 @@
     </div>
     <div class="carte">
       <h3>Zone dangereuse</h3>
+      <p class="aide">Le stock est partagé : l'effacement touche tous les utilisateurs.</p>
       <button id="btnReset" class="danger">Tout effacer</button>
     </div>
-    <p class="aide">Les données sont stockées sur cet appareil. Faites des sauvegardes régulières.</p>
+    <p class="aide">Les données sont synchronisées en ligne entre tous les utilisateurs et gardées hors-ligne sur l'appareil.</p>
   </section>
 </main>
 
@@ -132,6 +150,6 @@
 <div id="toast" class="hidden"></div>
 
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>
