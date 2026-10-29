@@ -17,6 +17,10 @@ const colArt = collection(fs, 'articles');
 const colMv = collection(fs, 'mouvements');
 const idDe = code => encodeURIComponent(code);
 
+// Administrateurs : doit correspondre à la liste dans firestore.rules (les règles font foi, l'interface ne fait que masquer)
+const ADMINS = ['frederic.morin@ropack.com'];
+const isAdmin = () => !!user && ADMINS.includes((user.email || '').toLowerCase());
+
 let articles = {};   // code -> article
 let histo = [];      // mouvements récents
 let user = null;
@@ -47,8 +51,9 @@ onAuthStateChanged(auth, u => {
   user = u;
   unsubs.forEach(f => f()); unsubs = [];
   $('#login').classList.toggle('hidden', !!u);
+  document.body.classList.toggle('est-admin', isAdmin());
   if (!u) { articles = {}; histo = []; stopScan(); render(); return; }
-  $('#userInfo').textContent = 'Connecté : ' + u.email;
+  $('#userInfo').textContent = 'Connecté : ' + u.email + (isAdmin() ? ' (administrateur)' : '');
   unsubs.push(onSnapshot(colArt, { includeMetadataChanges: true }, snap => {
     articles = {};
     snap.forEach(d => { const a = d.data(); articles[a.code] = a; });
@@ -223,13 +228,14 @@ function ouvrirArticle(a, codePre) {
   $('#a_qte').value = a ? a.qte : 0;
   $('#a_min').value = a ? a.min : 0;
   $('#a_unite').value = a ? a.unite : 'unité';
-  $('#a_suppr').classList.toggle('hidden', !a);
+  $('#a_suppr').classList.toggle('hidden', !a || !isAdmin());
   $('#dlgArticle').showModal();
 }
 $('#btnNouveau').onclick = () => ouvrirArticle(null);
 $('#a_annuler').onclick = () => $('#dlgArticle').close();
 $('#dlgArticle').addEventListener('close', reprendre);
 $('#a_suppr').onclick = () => {
+  if (!isAdmin()) return;
   if (!confirm('Supprimer cet article pour tous les utilisateurs ?')) return;
   const batch = writeBatch(fs);
   batch.delete(doc(fs, 'articles', idDe(editCode)));
@@ -321,6 +327,7 @@ async function ecrireLots(ops) {
   }
 }
 $('#btnReset').onclick = async () => {
+  if (!isAdmin()) return;
   if (prompt('Cela efface TOUS les articles et l\'historique pour tous les utilisateurs.\nTapez EFFACER pour confirmer.') !== 'EFFACER') return;
   try {
     const [a, m] = await Promise.all([getDocs(colArt), getDocs(colMv)]);
@@ -345,7 +352,7 @@ function parseCsv(txt) {
   return rows.filter(r => r.some(x => x.trim()));
 }
 $('#fichierImport').onchange = async e => {
-  const f = e.target.files[0]; if (!f) return;
+  const f = e.target.files[0]; if (!f || !isAdmin()) return;
   const txt = await f.text();
   try {
     let liste = [];
