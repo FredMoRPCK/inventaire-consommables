@@ -146,9 +146,11 @@ let mode = 'sortie';
 const AIDE = {
   sortie: 'Scannez un article pour retirer du stock (consommation).',
   entree: 'Scannez un article pour ajouter du stock (réception).',
-  compte: 'Scannez un article puis saisissez la quantité réellement comptée.'
+  compte: 'Scannez un article puis saisissez la quantité réellement comptée.',
+  transfert: 'Scannez un article du magasin choisi en haut, puis indiquez la quantité et le magasin de destination.'
 };
 $$('.mode').forEach(b => b.onclick = () => {
+  if (b.dataset.mode === 'transfert' && Object.keys(magasins).length < 2) return toast('Il faut au moins deux magasins pour un transfert');
   mode = b.dataset.mode;
   $$('.mode').forEach(x => x.classList.toggle('actif', x === b));
   $('#aideMode').textContent = AIDE[mode];
@@ -234,7 +236,12 @@ function traiter(code) {
 let qArt = null;
 function ouvrirQte(a) {
   qArt = a;
-  const lib = { sortie: 'Sortie', entree: 'Entrée', compte: 'Comptage' }[mode];
+  const lib = { sortie: 'Sortie', entree: 'Entrée', compte: 'Comptage', transfert: 'Transfert' }[mode];
+  const dests = Object.keys(magasins).filter(id => id !== a.magasin)
+    .sort((x, y) => nomMag(x).localeCompare(nomMag(y), 'fr'));
+  $('#q_dest').innerHTML = dests.map(id => `<option value="${esc(id)}">${esc(magasins[id].nom)}</option>`).join('');
+  $('#q_destBox').classList.toggle('hidden', mode !== 'transfert');
+  $('#q_dest').required = mode === 'transfert';
   $('#q_titre').textContent = `${lib} — ${a.nom}`;
   $('#q_info').textContent = `${nomMag(a.magasin)} · Stock actuel : ${fmt(a.qte)} ${a.unite}` + (a.empl ? ` · ${a.empl}` : '');
   $('#q_val').value = mode === 'compte' ? fmt(a.qte) : 1;
@@ -250,6 +257,7 @@ $('#dlgQte').addEventListener('close', reprendre);
 $('#formQte').onsubmit = () => {
   const v = +$('#q_val').value, a = articles[idArt(qArt.magasin, qArt.code)] || qArt, note = $('#q_note').value.trim();
   if (isNaN(v) || v < 0) return;
+  if (mode === 'transfert') return faireTransfert(a, v, note);
   let delta, type;
   if (mode === 'sortie') { delta = -v; type = 'sortie'; }
   else if (mode === 'entree') { delta = v; type = 'entrée'; }
@@ -268,6 +276,29 @@ $('#formQte').onsubmit = () => {
     (a.min > 0 && apres <= a.min ? `<br><span style="color:var(--bad)">⚠ Stock bas (min ${fmt(a.min)})</span>` : '');
   toast('Enregistré');
 };
+
+// Transfert : retire du magasin d'origine et ajoute au magasin de destination, dans un seul lot atomique.
+function faireTransfert(a, v, note) {
+  const dest = $('#q_dest').value;
+  if (!dest || dest === a.magasin || !magasins[dest] || v <= 0) return;
+  if (v > a.qte && !confirm(`Transfert (${v}) supérieur au stock (${fmt(a.qte)}). Continuer ?`)) return;
+  const srcId = idArt(a.magasin, a.code), dstId = idArt(dest, a.code), d = articles[dstId];
+  const batch = writeBatch(fs);
+  batch.update(doc(fs, 'articles', srcId), { qte: increment(-v) });
+  if (d) batch.update(doc(fs, 'articles', dstId), { qte: increment(v) });
+  else batch.set(doc(fs, 'articles', dstId),
+    { magasin: dest, code: a.code, nom: a.nom, cat: a.cat || '', empl: '', qte: v, min: 0, unite: a.unite || 'unité' });
+  const apresSrc = fmt(a.qte - v), apresDst = fmt((d ? d.qte : 0) + v), suite = note ? ' · ' + note : '';
+  batch.set(doc(colMv), mvDoc('transfert', a, -v, apresSrc, 'vers ' + nomMag(dest) + suite));
+  batch.set(doc(colMv), mvDoc('transfert', { magasin: dest, code: a.code, nom: d ? d.nom : a.nom }, v, apresDst, 'depuis ' + nomMag(a.magasin) + suite));
+  batch.commit().catch(erreur);
+  const box = $('#dernier');
+  box.classList.remove('hidden'); box.style.borderLeftColor = 'var(--bleu)';
+  box.innerHTML = `<b>${esc(a.nom)}</b><br>Transfert de ${fmt(v)} ${esc(a.unite)} : ` +
+    `<span class="tag">${esc(nomMag(a.magasin))}</span> → <span class="tag">${esc(nomMag(dest))}</span><br>` +
+    `Reste : ${apresSrc} · Destination : ${apresDst}` + (d ? '' : '<br><span class="aide">Article créé dans le magasin de destination (minimum à définir).</span>');
+  toast('Transfert enregistré');
+}
 
 // ---------- Fiche article ----------
 let editMag = '', editId = null;
@@ -360,7 +391,7 @@ function render() {
 
   const htous = $('#histoTous').checked;
   $('#histo').innerHTML = histo.filter(h => htous || h.magasin === mCur).slice(0, 300).map(h => {
-    const c = h.type === 'sortie' ? 's' : h.type === 'comptage' || h.type === 'ajustement' ? 'c' : 'e';
+    const c = h.type === 'sortie' ? 's' : h.type === 'transfert' ? 't' : h.type === 'comptage' || h.type === 'ajustement' ? 'c' : 'e';
     return `<div class="mv"><div><b class="${c}">${esc(h.type)} ${h.delta > 0 ? '+' : ''}${fmt(h.delta)}</b> ${esc(h.nom)}
       <div class="aide">${htous ? `<span class="tag">${esc(nomMag(h.magasin))}</span>` : ''}${new Date(h.t).toLocaleString('fr-CA')} · reste ${fmt(h.apres)}${h.user ? ' · ' + esc(h.user) : ''}${h.note ? ' · ' + esc(h.note) : ''}</div></div></div>`;
   }).join('') || '<p class="aide">Aucun mouvement.</p>';

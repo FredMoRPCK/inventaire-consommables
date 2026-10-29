@@ -38,6 +38,7 @@
       <button class="mode actif" data-mode="sortie">Sortie −</button>
       <button class="mode" data-mode="entree">Entrée +</button>
       <button class="mode" data-mode="compte">Comptage</button>
+    <button class="mode" data-mode="transfert">Transfert</button>
     </div>
     <div id="lecteurBox">
       <div id="lecteur"></div>
@@ -149,6 +150,7 @@
   <form method="dialog" id="formQte">
     <h3 id="q_titre"></h3>
     <p id="q_info" class="aide"></p>
+    <label id="q_destBox" class="hidden">Magasin de destination <select id="q_dest"></select></label>
     <div class="row centre">
       <button type="button" id="q_moins" class="rond">−</button>
       <input id="q_val" type="number" step="any" value="1" min="0">

@@ -29,6 +29,9 @@ label input{margin-top:4px;color:var(--txt);font-size:16px}
 .mode.actif[data-mode=sortie]{background:var(--bad);color:#fff;border-color:var(--bad)}
 .mode.actif[data-mode=entree]{background:var(--ok);color:#fff;border-color:var(--ok)}
 .mode.actif[data-mode=compte]{background:var(--warn);color:#fff;border-color:var(--warn)}
+.mode.actif[data-mode=transfert]{background:var(--bleu);color:#fff;border-color:var(--bleu)}
+.modes{flex-wrap:wrap}.mode{font-size:14px;white-space:nowrap}
+.mv b.t{color:var(--bleu)}
 #lecteurBox{position:relative;background:#000;border-radius:12px;overflow:hidden;min-height:200px}
 #lecteur{width:100%}
 #lecteurVide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#aaa;text-align:center;padding:20px}
