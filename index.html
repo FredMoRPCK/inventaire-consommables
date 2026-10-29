@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f4c81">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Inventaire">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="icon" href="icon.svg">
+<title>Inventaire consommables</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1 id="titre">Inventaire</h1>
+  <span id="alerteBadge" class="badge hidden"></span>
+</header>
+
+<main>
+  <!-- SCAN -->
+  <section id="vue-scan" class="vue actif">
+    <div class="modes">
+      <button class="mode actif" data-mode="sortie">Sortie −</button>
+      <button class="mode" data-mode="entree">Entrée +</button>
+      <button class="mode" data-mode="compte">Comptage</button>
+    </div>
+    <div id="lecteurBox">
+      <div id="lecteur"></div>
+      <div id="lecteurVide">Appuyez sur « Scanner » pour activer la caméra</div>
+    </div>
+    <div class="row">
+      <button id="btnScan" class="primaire">📷 Scanner</button>
+      <button id="btnTorch" class="hidden">🔦</button>
+    </div>
+    <form id="formCode" class="row">
+      <input id="codeManuel" placeholder="Code saisi ou douchette…" inputmode="text" autocomplete="off" autocapitalize="off">
+      <button type="submit">OK</button>
+    </form>
+    <p class="aide" id="aideMode"></p>
+    <div id="dernier" class="carte hidden"></div>
+  </section>
+
+  <!-- STOCK -->
+  <section id="vue-stock" class="vue">
+    <div class="row">
+      <input id="recherche" type="search" placeholder="Rechercher (nom, code, emplacement)…">
+    </div>
+    <div class="row">
+      <select id="filtreCat"><option value="">Toutes catégories</option></select>
+      <label class="chk"><input type="checkbox" id="filtreBas"> Stock bas</label>
+    </div>
+    <div id="liste"></div>
+    <button id="btnNouveau" class="flottant">＋</button>
+  </section>
+
+  <!-- HISTORIQUE -->
+  <section id="vue-histo" class="vue">
+    <div id="histo"></div>
+  </section>
+
+  <!-- DONNEES -->
+  <section id="vue-data" class="vue">
+    <div class="carte">
+      <h3>Exporter</h3>
+      <button id="btnExpStock">Stock (CSV)</button>
+      <button id="btnExpHisto">Historique (CSV)</button>
+      <button id="btnExpJson">Sauvegarde complète (JSON)</button>
+    </div>
+    <div class="carte">
+      <h3>Importer</h3>
+      <p class="aide">CSV avec colonnes : code;nom;categorie;emplacement;quantite;minimum;unite</p>
+      <input type="file" id="fichierImport" accept=".csv,.json,text/csv,application/json">
+    </div>
+    <div class="carte">
+      <h3>Zone dangereuse</h3>
+      <button id="btnReset" class="danger">Tout effacer</button>
+    </div>
+    <p class="aide">Les données sont stockées sur cet appareil. Faites des sauvegardes régulières.</p>
+  </section>
+</main>
+
+<nav>
+  <button class="tab actif" data-vue="scan"><span>📷</span>Scan</button>
+  <button class="tab" data-vue="stock"><span>📦</span>Stock</button>
+  <button class="tab" data-vue="histo"><span>🕘</span>Historique</button>
+  <button class="tab" data-vue="data"><span>⚙️</span>Données</button>
+</nav>
+
+<!-- Fiche article -->
+<dialog id="dlgArticle">
+  <form method="dialog" id="formArticle">
+    <h3 id="dlgTitre">Article</h3>
+    <label>Code-barres <div class="row"><input id="a_code" required><button type="button" id="a_scan">📷</button></div></label>
+    <label>Nom <input id="a_nom" required></label>
+    <label>Catégorie <input id="a_cat" list="listeCat"></label>
+    <datalist id="listeCat"></datalist>
+    <label>Emplacement <input id="a_empl"></label>
+    <div class="row">
+      <label>Quantité <input id="a_qte" type="number" step="any" value="0"></label>
+      <label>Minimum <input id="a_min" type="number" step="any" value="0"></label>
+      <label>Unité <input id="a_unite" value="unité"></label>
+    </div>
+    <div class="row fin">
+      <button type="button" id="a_suppr" class="danger">Supprimer</button>
+      <button type="button" id="a_annuler">Annuler</button>
+      <button type="submit" class="primaire">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Quantité -->
+<dialog id="dlgQte">
+  <form method="dialog" id="formQte">
+    <h3 id="q_titre"></h3>
+    <p id="q_info" class="aide"></p>
+    <div class="row centre">
+      <button type="button" id="q_moins" class="rond">−</button>
+      <input id="q_val" type="number" step="any" value="1" min="0">
+      <button type="button" id="q_plus" class="rond">+</button>
+    </div>
+    <label>Note (facultatif) <input id="q_note" placeholder="Machine, ordre de travail…"></label>
+    <div class="row fin">
+      <button type="button" id="q_annuler">Annuler</button>
+      <button type="submit" class="primaire" id="q_ok">Valider</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="hidden"></div>
+
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "Inventaire consommables",
+  "short_name": "Inventaire",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f4c81",
+  "theme_color": "#0f4c81",
+  "lang": "fr",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
