@@ -263,11 +263,16 @@ function localiser(code) {
   const rows = arts().filter(a => a.code === code).sort((x, y) => y.qte - x.qte || nomMag(x.magasin).localeCompare(nomMag(y.magasin), 'fr'));
   const box = $('#dernier');
   box.classList.remove('hidden');
+  // Ancien article jamais rattaché à un magasin : il est masqué, on le signale plutôt que de dire « introuvable »
+  const orphelin = legacyArts().some(([, a]) => a.code === code)
+    ? '<div class="aide">⚠ Ce code existe dans d\'anciennes données non rattachées à un magasin (Données → Rattacher).</div>' : '';
   if (!rows.length) {
     box.style.borderLeftColor = 'var(--bad)';
-    box.innerHTML = `<b>${esc(code)}</b><br>Article introuvable dans tous les magasins.`;
+    box.innerHTML = `<b>${esc(code)}</b><br>Article introuvable dans les magasins.${orphelin}`;
     return;
   }
+  const absents = Object.keys(magasins).filter(id => !rows.some(a => a.magasin === id))
+    .sort((x, y) => nomMag(x).localeCompare(nomMag(y), 'fr'));
   const memeUnite = rows.every(a => a.unite === rows[0].unite);
   const total = fmt(rows.reduce((s, a) => s + a.qte, 0));
   box.style.borderLeftColor = 'var(--bleu)';
@@ -275,7 +280,9 @@ function localiser(code) {
     rows.map(a => `<div class="mag"><span>${esc(nomMag(a.magasin))}${a.magasin === mCur ? ' <span class="tag">ici</span>' : ''}` +
       `${a.empl ? ' · ' + esc(a.empl) : ''}${a.nom !== rows[0].nom ? ' · ' + esc(a.nom) : ''}</span>` +
       `<b style="color:${a.qte <= 0 ? 'var(--bad)' : bas(a) ? 'var(--warn)' : 'inherit'}">${fmt(a.qte)} ${esc(a.unite)}</b></div>`).join('') +
-    `<div class="aide">${rows.length} magasin(s)${memeUnite ? ' · total : ' + total + ' ' + esc(rows[0].unite) : ''}</div>`;
+    absents.map(id => `<div class="mag"><span style="color:var(--gris)">${esc(nomMag(id))}${id === mCur ? ' <span class="tag">ici</span>' : ''}</span>` +
+      `<span class="aide" style="flex:0 0 auto">non référencé</span></div>`).join('') +
+    `<div class="aide">Présent dans ${rows.length} magasin(s) sur ${Object.keys(magasins).length}${memeUnite ? ' · total : ' + total + ' ' + esc(rows[0].unite) : ''}</div>${orphelin}`;
 }
 
 function traiter(code) {
