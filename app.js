@@ -183,7 +183,8 @@ const AIDE = {
   sortie: 'Scannez un article pour retirer du stock (consommation).',
   entree: 'Scannez un article pour ajouter du stock (réception).',
   compte: 'Scannez un article puis saisissez la quantité réellement comptée.',
-  transfert: 'Scannez un article du magasin choisi en haut, puis indiquez la quantité et le magasin de destination.'
+  transfert: 'Scannez un article du magasin choisi en haut, puis indiquez la quantité et le magasin de destination.',
+  localiser: 'Scannez un article pour voir sa quantité dans chacun des magasins.'
 };
 $$('.mode').forEach(b => b.onclick = () => {
   if (b.dataset.mode === 'transfert' && Object.keys(magasins).length < 2) return toast('Il faut au moins deux magasins pour un transfert');
@@ -198,7 +199,7 @@ let scanner = null, scanning = false, lastCode = '', lastTime = 0, torchOn = fal
 
 async function startScan() {
   if (scanning) return;
-  if (!mCur) return toast('Aucun magasin : demandez à l\'administrateur d\'en créer un');
+  if (!mCur && mode !== 'localiser') return toast('Aucun magasin : demandez à l\'administrateur d\'en créer un');
   if (!window.Html5Qrcode) return toast('Bibliothèque de scan non chargée (connexion requise la 1re fois)');
   if (!window.isSecureContext) return toast('La caméra exige HTTPS');
   scanner = scanner || new Html5Qrcode('lecteur', {
@@ -257,7 +258,28 @@ $('#formCode').onsubmit = e => {
   if (v) { traiter(v); $('#codeManuel').value = ''; }
 };
 
+// Mode « Où ? » : affiche le stock de l'article dans tous les magasins, sans rien modifier.
+function localiser(code) {
+  const rows = arts().filter(a => a.code === code).sort((x, y) => y.qte - x.qte || nomMag(x.magasin).localeCompare(nomMag(y.magasin), 'fr'));
+  const box = $('#dernier');
+  box.classList.remove('hidden');
+  if (!rows.length) {
+    box.style.borderLeftColor = 'var(--bad)';
+    box.innerHTML = `<b>${esc(code)}</b><br>Article introuvable dans tous les magasins.`;
+    return;
+  }
+  const memeUnite = rows.every(a => a.unite === rows[0].unite);
+  const total = fmt(rows.reduce((s, a) => s + a.qte, 0));
+  box.style.borderLeftColor = 'var(--bleu)';
+  box.innerHTML = `<b>${esc(rows[0].nom)}</b> <span class="aide">${esc(code)}</span>` +
+    rows.map(a => `<div class="mag"><span>${esc(nomMag(a.magasin))}${a.magasin === mCur ? ' <span class="tag">ici</span>' : ''}` +
+      `${a.empl ? ' · ' + esc(a.empl) : ''}${a.nom !== rows[0].nom ? ' · ' + esc(a.nom) : ''}</span>` +
+      `<b style="color:${a.qte <= 0 ? 'var(--bad)' : bas(a) ? 'var(--warn)' : 'inherit'}">${fmt(a.qte)} ${esc(a.unite)}</b></div>`).join('') +
+    `<div class="aide">${rows.length} magasin(s)${memeUnite ? ' · total : ' + total + ' ' + esc(rows[0].unite) : ''}</div>`;
+}
+
 function traiter(code) {
+  if (mode === 'localiser' && !scanPourFiche) return localiser(code);
   if (!mCur) return toast('Aucun magasin sélectionné');
   if (scanPourFiche) {
     scanPourFiche = false; stopScan();
