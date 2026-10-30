@@ -201,6 +201,7 @@ $$('.mode').forEach(b => b.onclick = () => {
   mode = b.dataset.mode;
   $$('.mode').forEach(x => x.classList.toggle('actif', x === b));
   $('#aideMode').textContent = AIDE[mode];
+  render();
 });
 $('#aideMode').textContent = AIDE[mode];
 
@@ -262,10 +263,45 @@ function onCode(code) {
   beep();
   traiter(code);
 }
+// Recherche sur l'écran Scan : pour les articles sans code-barres (ou code illisible).
+// Mots multiples = tous doivent se trouver ; accents et majuscules ignorés. En mode « Où ? », cherche dans tous les magasins.
+const norm = s => String(s ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+const MAX_RES = 30;
+function chercher() {
+  const q = norm($('#codeManuel').value).split(/\s+/).filter(Boolean), cat = $('#scanCat').value, box = $('#resultats');
+  if (!q.length && !cat) { box.innerHTML = ''; return []; }
+  const tous = mode === 'localiser';
+  let res = (tous ? arts() : artsMag()).filter(a => (!cat || a.cat === cat) && q.every(t => norm([a.nom, a.code, a.cat, a.empl].join(' ')).includes(t)));
+  if (tous) { const vu = new Set(); res = res.filter(a => !vu.has(a.code) && vu.add(a.code)); }
+  res.sort((x, y) => x.nom.localeCompare(y.nom, 'fr'));
+  const montre = res.slice(0, MAX_RES);
+  box.innerHTML = montre.map(a => {
+    const total = tous ? fmt(arts().filter(x => x.code === a.code).reduce((s, x) => s + x.qte, 0)) : fmt(a.qte);
+    return `<div class="art ${!tous && bas(a) ? 'bas' : ''}" data-code="${esc(a.code)}">
+      <div class="i"><div class="n">${esc(a.nom)}</div>
+      <div class="s">${esc(a.code)}${a.empl && !tous ? ' · ' + esc(a.empl) : ''}${a.cat ? ' · ' + esc(a.cat) : ''}</div></div>
+      <div class="qte">${total}<small>${esc(a.unite)}${tous ? ' · total' : ''}</small></div></div>`;
+  }).join('') + (res.length > MAX_RES ? `<p class="plus">${res.length - MAX_RES} autres résultats : précisez la recherche</p>` : '')
+    || '<p class="aide">Aucun article trouvé. Appuyez sur OK pour créer ce code.</p>';
+  $$('#resultats .art').forEach(el => el.onclick = () => choisir(el.dataset.code));
+  return res;
+}
+function choisir(code) {
+  $('#codeManuel').value = ''; $('#scanCat').value = ''; $('#resultats').innerHTML = '';
+  traiter(code);
+}
+$('#codeManuel').addEventListener('input', chercher);
+$('#scanCat').addEventListener('change', chercher);
 $('#formCode').onsubmit = e => {
   e.preventDefault();
   const v = $('#codeManuel').value.trim();
-  if (v) { traiter(v); $('#codeManuel').value = ''; }
+  if (!v) return;
+  // Code exact (douchette, saisie complète) : traité tout de suite ; sinon un seul résultat : on le prend
+  const exact = mode === 'localiser' ? arts().some(a => a.code === v) : !!articles[idArt(mCur, v)];
+  if (exact) return choisir(v);
+  const res = chercher();
+  if (res.length === 1) return choisir(res[0].code);
+  if (!res.length) return choisir(v);   // code inconnu : proposition de création
 };
 
 // Mode « Où ? » : affiche le stock de l'article dans tous les magasins, sans rien modifier.
@@ -440,6 +476,13 @@ function render() {
   renderListeMag();
   renderLegacy(ids);
 
+  // Catégories proposées sur l'écran Scan (celles du magasin actif, ou de tous en mode « Où ? »)
+  const catsScan = [...new Set((mode === 'localiser' ? arts() : artsMag()).map(a => a.cat).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'fr'));
+  const sc = $('#scanCat'), scv = sc.value;
+  sc.innerHTML = '<option value="">Toutes catégories</option>' + catsScan.map(c => `<option>${esc(c)}</option>`).join('');
+  sc.value = catsScan.includes(scv) ? scv : '';
+  chercher();
+
   const tous = $('#filtreTous').checked;
   const base = tous ? arts() : artsMag();
   const nbBas = artsMag().filter(bas).length;
@@ -452,9 +495,9 @@ function render() {
   fc.value = cats.includes(cur) ? cur : '';
   $('#listeCat').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
 
-  const q = $('#recherche').value.toLowerCase().trim(), cat = fc.value, soloBas = $('#filtreBas').checked;
+  const q = norm($('#recherche').value).trim(), cat = fc.value, soloBas = $('#filtreBas').checked;
   const res = base.filter(a => (!cat || a.cat === cat) && (!soloBas || bas(a)) &&
-    (!q || [a.nom, a.code, a.empl, a.cat].join(' ').toLowerCase().includes(q)))
+    (!q || norm([a.nom, a.code, a.empl, a.cat].join(' ')).includes(q)))
     .sort((x, y) => x.nom.localeCompare(y.nom, 'fr') || nomMag(x.magasin).localeCompare(nomMag(y.magasin), 'fr'));
   $('#liste').innerHTML = res.length ? res.map(a => `
     <div class="art ${bas(a) ? 'bas' : ''}" data-id="${esc(idArt(a.magasin, a.code))}">

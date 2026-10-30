@@ -52,9 +52,11 @@
       <button id="btnTorch" class="hidden">🔦</button>
     </div>
     <form id="formCode" class="row">
-      <input id="codeManuel" placeholder="Code saisi ou douchette…" inputmode="text" autocomplete="off" autocapitalize="off">
+      <input id="codeManuel" type="search" placeholder="Chercher : code, description, catégorie…" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off">
       <button type="submit">OK</button>
     </form>
+    <select id="scanCat" aria-label="Catégorie"><option value="">Toutes catégories</option></select>
+    <div id="resultats"></div>
     <p class="aide" id="aideMode"></p>
     <div id="dernier" class="carte hidden"></div>
   </section>

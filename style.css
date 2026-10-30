@@ -104,6 +104,10 @@ dialog h3{margin-top:0;font-size:18px}
 /* Alertes, étiquettes */
 #toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));background:#0f172a;color:#fff;padding:11px 18px;border-radius:999px;z-index:99;max-width:90vw;font-size:14px;font-weight:600;box-shadow:0 10px 30px -8px #0009}
 .err{color:var(--bad)}
+#scanCat{margin:0 0 4px}
+#resultats .art{padding:10px 12px;margin:8px 0}
+#resultats .qte{font-size:18px;min-width:56px}
+.plus{text-align:center;color:var(--gris);font-size:13px;margin:6px 0}
 .tag{display:inline-block;background:var(--bleu-doux);color:var(--bleu);border-radius:8px;padding:1px 8px;font-size:11px;font-weight:700;margin-right:6px}
 .mag{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--bord)}
 .mag:last-child{border-bottom:0}
