@@ -53,7 +53,17 @@ function beep() {
   if (navigator.vibrate) navigator.vibrate(50);
 }
 const mvDoc = (type, a, delta, apres, note) =>
-  ({ t: Date.now(), type, magasin: a.magasin, code: a.code, nom: a.nom, delta, apres, note: note || '', user: user ? user.email : '' });
+  ({ t: Date.now(), type, magasin: a.magasin, empl: a.empl || '', code: a.code, nom: a.nom, delta, apres, note: note || '', user: user ? user.email : '' });
+
+// Lieu = magasin + emplacement. Un transfert a une origine (magasin, empl) et une destination (vers, versEmpl).
+const lieu = (mid, empl) => nomMag(mid) + (empl ? ` (${empl})` : '');
+function trajet(h) {
+  const ici = lieu(h.magasin, h.empl);
+  if (h.type === 'transfert' && h.vers) return [ici, lieu(h.vers, h.versEmpl)];
+  if (h.type === 'sortie') return [ici, 'consommé'];
+  if (h.type === 'entrée' || h.type === 'création') return ['réception', ici];
+  return [ici, ici];   // comptage, ajustement : sur place
+}
 
 // ---------- Connexion ----------
 onAuthStateChanged(auth, u => {
@@ -353,9 +363,9 @@ function faireTransfert(a, v, note) {
   if (d) batch.update(doc(fs, 'articles', dstId), { qte: increment(v) });
   else batch.set(doc(fs, 'articles', dstId),
     { magasin: dest, code: a.code, nom: a.nom, cat: a.cat || '', empl: '', qte: v, min: 0, unite: a.unite || 'unité' });
-  const apresSrc = fmt(a.qte - v), apresDst = fmt((d ? d.qte : 0) + v), suite = note ? ' · ' + note : '';
-  batch.set(doc(colMv), mvDoc('transfert', a, -v, apresSrc, 'vers ' + nomMag(dest) + suite));
-  batch.set(doc(colMv), mvDoc('transfert', { magasin: dest, code: a.code, nom: d ? d.nom : a.nom }, v, apresDst, 'depuis ' + nomMag(a.magasin) + suite));
+  const apresSrc = fmt(a.qte - v), apresDst = fmt((d ? d.qte : 0) + v);
+  // Un seul mouvement par transfert : origine = magasin/empl, destination = vers/versEmpl
+  batch.set(doc(colMv), { ...mvDoc('transfert', a, v, apresSrc, note), vers: dest, versEmpl: d ? d.empl || '' : '', apresVers: apresDst });
   batch.commit().catch(erreur);
   const box = $('#dernier');
   box.classList.remove('hidden'); box.style.borderLeftColor = 'var(--bleu)';
@@ -456,10 +466,17 @@ function render() {
   $$('#liste .art').forEach(el => el.onclick = () => ouvrirArticle(articles[el.dataset.id]));
 
   const htous = $('#histoTous').checked;
-  $('#histo').innerHTML = histo.filter(h => htous || h.magasin === mCur).slice(0, 300).map(h => {
+  $('#histo').innerHTML = histo.filter(h => htous || h.magasin === mCur || h.vers === mCur).slice(0, 300).map(h => {
     const c = h.type === 'sortie' ? 's' : h.type === 'transfert' ? 't' : h.type === 'comptage' || h.type === 'ajustement' ? 'c' : 'e';
-    return `<div class="mv"><div><b class="${c}">${esc(h.type)} ${h.delta > 0 ? '+' : ''}${fmt(h.delta)}</b> ${esc(h.nom)}
-      <div class="aide">${htous ? `<span class="tag">${esc(nomMag(h.magasin))}</span>` : ''}${new Date(h.t).toLocaleString('fr-CA')} · reste ${fmt(h.apres)}${h.user ? ' · ' + esc(h.user) : ''}${h.note ? ' · ' + esc(h.note) : ''}</div></div></div>`;
+    // Un transfert est une seule ligne : « −5 » vu du magasin d'origine, « +5 » vu de la destination, « 5 » en vue globale
+    const recu = h.type === 'transfert' && h.vers && !htous && h.vers === mCur && h.magasin !== mCur;
+    const delta = h.type === 'transfert' && h.vers ? (htous ? fmt(h.delta) : (recu ? '+' : '−') + fmt(h.delta)) : (h.delta > 0 ? '+' : '') + fmt(h.delta);
+    const apres = recu ? h.apresVers : h.apres;
+    const [de, vers] = trajet(h);
+    const route = de === vers ? `<span class="tag">${esc(de)}</span>` : `<span class="tag">${esc(de)}</span>→<span class="tag">${esc(vers)}</span>`;
+    return `<div class="mv"><div><b class="${c}">${esc(h.type)} ${delta}</b> ${esc(h.nom)}
+      <div class="aide">${route}</div>
+      <div class="aide">${new Date(h.t).toLocaleString('fr-CA')} · reste ${fmt(apres)}${h.user ? ' · ' + esc(h.user) : ''}${h.note ? ' · ' + esc(h.note) : ''}</div></div></div>`;
   }).join('') || '<p class="aide">Aucun mouvement.</p>';
 }
 ['#recherche', '#filtreCat', '#filtreBas', '#filtreTous', '#histoTous'].forEach(s => $(s).addEventListener('input', render));
@@ -478,8 +495,9 @@ $('#btnExpStock').onclick = () => telecharger(`stock-${jour()}.csv`,
     ...arts().sort((x, y) => nomMag(x.magasin).localeCompare(nomMag(y.magasin), 'fr') || x.nom.localeCompare(y.nom, 'fr'))
       .map(a => [nomMag(a.magasin), a.code, a.nom, a.cat, a.empl, a.qte, a.min, a.unite])]), 'text/csv');
 $('#btnExpHisto').onclick = () => telecharger(`historique-${jour()}.csv`,
-  csv([['date', 'magasin', 'type', 'code', 'nom', 'variation', 'apres', 'utilisateur', 'note'],
-    ...histo.map(h => [new Date(h.t).toISOString(), nomMag(h.magasin), h.type, h.code, h.nom, h.delta, h.apres, h.user || '', h.note])]), 'text/csv');
+  csv([['date', 'type', 'code', 'nom', 'depart', 'arrivee', 'quantite', 'reste_depart', 'reste_arrivee', 'utilisateur', 'note'],
+    ...histo.map(h => { const [de, vers] = trajet(h);
+      return [new Date(h.t).toISOString(), h.type, h.code, h.nom, de, vers, h.delta, h.apres, h.apresVers ?? '', h.user || '', h.note]; })]), 'text/csv');
 $('#btnExpJson').onclick = () => telecharger(`sauvegarde-${jour()}.json`, JSON.stringify({ magasins, articles, histo }), 'application/json');
 
 // Écriture par lots de 400 (limite Firestore : 500)
