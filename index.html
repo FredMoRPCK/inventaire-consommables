@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0f4c81">
+<meta name="theme-color" content="#4f46e5">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Inventaire">
@@ -16,7 +16,9 @@
 <body>
 <div id="login" class="hidden">
   <form id="formLogin" class="carte">
+    <div class="logo"><svg viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 8v8M12 8v8M16 8v8"/></svg></div>
     <h2>Inventaire consommables</h2>
+    <p class="aide" style="margin:0 0 8px">Connectez-vous pour accéder au stock.</p>
     <label>Courriel <input id="l_email" type="email" required autocomplete="username"></label>
     <label>Mot de passe <input id="l_pass" type="password" required autocomplete="current-password"></label>
     <p id="l_err" class="aide err"></p>
@@ -124,10 +126,10 @@
 </main>
 
 <nav>
-  <button class="tab actif" data-vue="scan"><span>📷</span>Scan</button>
-  <button class="tab" data-vue="stock"><span>📦</span>Stock</button>
-  <button class="tab" data-vue="histo"><span>🕘</span>Historique</button>
-  <button class="tab" data-vue="data"><span>⚙️</span>Données</button>
+  <button class="tab actif" data-vue="scan"><svg viewBox="0 0 24 24"><path d="M4 7V5a1 1 0 0 1 1-1h2M17 4h2a1 1 0 0 1 1 1v2M20 17v2a1 1 0 0 1-1 1h-2M7 20H5a1 1 0 0 1-1-1v-2M8 8v8M12 8v8M16 8v8"/></svg>Scan</button>
+  <button class="tab" data-vue="stock"><svg viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5zM3 8l9 5 9-5M12 13v8"/></svg>Stock</button>
+  <button class="tab" data-vue="histo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Historique</button>
+  <button class="tab" data-vue="data"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>Données</button>
 </nav>
 
 <!-- Fiche article -->
